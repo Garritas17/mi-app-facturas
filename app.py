@@ -5,7 +5,7 @@ import json
 import io
 
 # 1. Configuración de la API (Usa gemini-1.5-flash directamente)
-genai.configure(api_key="TU_API_KEY_AQUI")
+genai.configure(api_key="AIzaSyAsSDEF7S7kq7hXS6uyFpI7P9SaVZHgQFY")
 model = genai.GenerativeModel('gemini-1.5-flash')
 
 st.set_page_config(page_title="Extractor de Facturas AI", layout="centered")
