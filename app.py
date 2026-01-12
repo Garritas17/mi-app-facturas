@@ -6,7 +6,7 @@ import io
 
 # 1. Configuración de la API de Google AI Studio
 # REEMPLAZA LAS COMILLAS CON TU LLAVE REAL
-genai.configure(api_key=AIzaSyAsSDEF7S7kq7hXS6uyFpI7P9SaVZHgQFY)
+genai.configure(api_key="AIzaSyAsSDEF7S7kq7hXS6uyFpI7P9SaVZHgQFY")
 model = genai.GenerativeModel('gemini-1.5-flash')
 
 # Configuración de la página
