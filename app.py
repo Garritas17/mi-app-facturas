@@ -4,52 +4,57 @@ import pandas as pd
 import json
 import io
 
-# 1. Configuración de la API (Usa gemini-1.5-flash directamente)
+# 1. Configuración de la API con la versión específica para evitar el error 404
+# ASEGÚRATE DE PEGAR TU API KEY AQUÍ ABAJO
 genai.configure(api_key="AIzaSyAsSDEF7S7kq7hXS6uyFpI7P9SaVZHgQFY")
-model = genai.GenerativeModel('gemini-1.5-flash')
+
+# Hemos cambiado el nombre del modelo a la versión estable específica
+model = genai.GenerativeModel('gemini-1.5-flash-001') 
 
 st.set_page_config(page_title="Extractor de Facturas AI", layout="centered")
 
 st.title("🚀 Extractor de Facturas Inteligente")
-st.write("Sube tus archivos y Gemini extraerá los datos automáticamente.")
+st.write("Sube tus archivos de PRECOR o cualquier otra empresa y Gemini extraerá los datos.")
 
-uploaded_files = st.file_uploader("Elige tus facturas", type=['png', 'jpg', 'jpeg', 'pdf'], accept_multiple_files=True)
+uploaded_files = st.file_uploader("Elige tus facturas (PDF o Imagen)", type=['png', 'jpg', 'jpeg', 'pdf'], accept_multiple_files=True)
 
 if uploaded_files:
     datos_extraidos = []
     
-    with st.spinner('Procesando con Inteligencia Artificial...'):
+    with st.spinner('Procesando factura...'):
         for file in uploaded_files:
             file_bytes = file.read()
             
-            # PROMPT AJUSTADO PARA TU FACTURA DE PRECOR
+            # Prompt optimizado para tu factura de PRECOR S.A.
             prompt = """
-            Analiza esta factura y extrae los datos en este formato JSON exacto:
+            Actúa como un experto contable. Analiza esta factura y extrae los datos en este formato JSON exacto:
             {
-              "RUC_Emisor": "RUC de quien vende",
-              "Emisor": "Nombre de la empresa vendedora",
-              "Serie_Numero": "Serie y número de factura (ej: F001-39541)",
-              "Fecha": "Fecha de emisión",
+              "RUC_Emisor": "RUC del vendedor",
+              "Emisor": "Nombre de la empresa",
+              "Comprobante": "Serie y número (ej. F001-39541)",
+              "Fecha": "YYYY-MM-DD",
               "Cliente": "Nombre del cliente",
               "RUC_Cliente": "RUC del cliente",
-              "Moneda": "Moneda de la factura",
-              "Subtotal": 0.00,
-              "IGV": 0.00,
+              "Moneda": "Moneda",
               "Total": 0.00
             }
-            Responde SOLO el JSON, sin texto adicional.
+            Responde únicamente el objeto JSON.
             """
             
             try:
+                # Se envía el archivo a Gemini
                 response = model.generate_content([
                     prompt,
                     {'mime_type': file.type, 'data': file_bytes}
                 ])
                 
-                # Limpieza de formato markdown
-                texto_limpio = response.text.strip().replace("```json", "").replace("```", "")
-                data = json.loads(texto_limpio)
-                data['Archivo_Origen'] = file.name
+                # Limpiar la respuesta de posibles caracteres extraños
+                texto = response.text.strip()
+                if "```json" in texto:
+                    texto = texto.split("```json")[1].split("```")[0]
+                
+                data = json.loads(texto)
+                data['Archivo'] = file.name
                 datos_extraidos.append(data)
                 
             except Exception as e:
@@ -57,12 +62,13 @@ if uploaded_files:
 
     if datos_extraidos:
         df = pd.DataFrame(datos_extraidos)
-        st.success("✅ ¡Hecho!")
+        st.success("✅ Procesado correctamente")
         st.dataframe(df)
 
+        # Botón para descargar Excel
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df.to_excel(writer, index=False, sheet_name='Facturas')
+            df.to_excel(writer, index=False)
         
         st.download_button(
             label="📥 Descargar Excel",
