@@ -5,7 +5,6 @@ import re
 
 def limpiar_valor(v):
     if v is None or v == "": return 0.0
-    # Elimina símbolos de moneda, espacios y comas
     limpio = re.sub(r'[^\d.]', '', str(v).replace(',', ''))
     try: return float(limpio)
     except: return 0.0
@@ -15,24 +14,18 @@ def extraer_datos_baolai(ruta_pdf):
     try:
         with pdfplumber.open(ruta_pdf) as pdf:
             texto_cabecera = pdf.pages[0].extract_text()
-            
-            # Captura de Factura (ej: BLA20210616)
             factura_match = re.search(r'BLA\d+[A-Z0-9]*', texto_cabecera)
             val_factura = factura_match.group(0) if factura_match else "No Identificado"
-            
-            # Captura de Fecha y RUC
             fecha_match = re.search(r'(?:FECHA|DATE)[:\s]*([\d\w/-]+)', texto_cabecera, re.IGNORECASE)
             ruc_match = re.search(r'RUC[:\s]*(\d+)', texto_cabecera)
-
+            
             for page in pdf.pages:
                 tablas = page.extract_tables()
                 for tabla in tablas:
                     for fila in tabla:
-                        # Solo filas con número de ítem
                         if fila and fila[0] and str(fila[0]).strip().isdigit():
                             fila_l = [str(c).replace('\n', ' ').strip() if c else "" for c in fila]
-                            
-                            # Captura dinámica: Precio penúltima col, Total última col
+                            # Captura de precios y totales (últimas columnas)
                             monto_total = fila_l[-1] 
                             precio_unit = fila_l[-2] 
 
@@ -44,7 +37,6 @@ def extraer_datos_baolai(ruta_pdf):
                                 "Products": fila_l[1],
                                 "Grade": fila_l[2] if len(fila_l) > 2 else "",
                                 "Diameter": fila_l[3] if len(fila_l) > 3 else "",
-                                "TTL_KGS": limpiar_valor(fila_l[13]) if len(fila_l) > 13 else 0,
                                 "PRECIO_UNITARIO_USD": limpiar_valor(precio_unit),
                                 "VALOR_TOTAL_USD": limpiar_valor(monto_total)
                             })
@@ -57,6 +49,5 @@ if __name__ == "__main__":
     archivos = [f for f in os.listdir('.') if f.lower().endswith(".pdf")]
     for arc in archivos:
         resultados.extend(extraer_datos_baolai(arc))
-    
     if resultados:
         pd.DataFrame(resultados).to_excel("reporte_final.xlsx", index=False)
