@@ -1,78 +1,51 @@
-import streamlit as st
-import google.generativeai as genai
+import pdfplumber
 import pandas as pd
-import json
-import io
+import os
+import re
 
-# 1. Configuración de la API con la versión específica para evitar el error 404
-# ASEGÚRATE DE PEGAR TU API KEY AQUÍ ABAJO
-genai.configure(api_key="AIzaSyAsSDEF7S7kq7hXS6uyFpI7P9SaVZHgQFY")
+def limpiar_valor(v):
+    if v is None or v == "": return 0.0
+    limpio = re.sub(r'[^\d.]', '', str(v).replace(',', ''))
+    try: return float(limpio)
+    except: return 0.0
 
-# Hemos cambiado el nombre del modelo a la versión estable específica
-model = genai.GenerativeModel('gemini-1.5-flash-001') 
-
-st.set_page_config(page_title="Extractor de Facturas AI", layout="centered")
-
-st.title("🚀 Extractor de Facturas Inteligente")
-st.write("Sube tus archivos de PRECOR o cualquier otra empresa y Gemini extraerá los datos.")
-
-uploaded_files = st.file_uploader("Elige tus facturas (PDF o Imagen)", type=['png', 'jpg', 'jpeg', 'pdf'], accept_multiple_files=True)
-
-if uploaded_files:
-    datos_extraidos = []
-    
-    with st.spinner('Procesando factura...'):
-        for file in uploaded_files:
-            file_bytes = file.read()
-            
-            # Prompt optimizado para tu factura de PRECOR S.A.
-            prompt = """
-            Actúa como un experto contable. Analiza esta factura y extrae los datos en este formato JSON exacto:
-            {
-              "RUC_Emisor": "RUC del vendedor",
-              "Emisor": "Nombre de la empresa",
-              "Comprobante": "Serie y número (ej. F001-39541)",
-              "Fecha": "YYYY-MM-DD",
-              "Cliente": "Nombre del cliente",
-              "RUC_Cliente": "RUC del cliente",
-              "Moneda": "Moneda",
-              "Total": 0.00
-            }
-            Responde únicamente el objeto JSON.
-            """
-            
-            try:
-                # Se envía el archivo a Gemini
-                response = model.generate_content([
-                    prompt,
-                    {'mime_type': file.type, 'data': file_bytes}
-                ])
-                
-                # Limpiar la respuesta de posibles caracteres extraños
-                texto = response.text.strip()
-                if "```json" in texto:
-                    texto = texto.split("```json")[1].split("```")[0]
-                
-                data = json.loads(texto)
-                data['Archivo'] = file.name
-                datos_extraidos.append(data)
-                
-            except Exception as e:
-                st.error(f"Error en {file.name}: {e}")
-
-    if datos_extraidos:
-        df = pd.DataFrame(datos_extraidos)
-        st.success("✅ Procesado correctamente")
-        st.dataframe(df)
-
-        # Botón para descargar Excel
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df.to_excel(writer, index=False)
+def extraer_datos(ruta_pdf):
+    items_finales = []
+    with pdfplumber.open(ruta_pdf) as pdf:
+        texto_cabecera = pdf.pages[0].extract_text()
         
-        st.download_button(
-            label="📥 Descargar Excel",
-            data=output.getvalue(),
-            file_name="reporte_facturas.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+        # Búsqueda flexible de Factura (Inglés/Español)
+        factura_match = re.search(r'(?:INVOICE NO\.|NÚMERO DE FACTURA)[:\s]*\n*([A-Z0-9-]+)', texto_cabecera, re.IGNORECASE)
+        if not factura_match:
+            factura_match = re.search(r'BLA\d+[A-Z0-9]*', texto_cabecera)
+        
+        val_factura = factura_match.group(1) if factura_match and len(factura_match.groups()) > 0 else (factura_match.group(0) if factura_match else "No Identificado")
+        
+        # Búsqueda de Fecha y RUC
+        fecha_match = re.search(r'(?:FECHA|DATE)[:\s]*([\d\w/-]+)', texto_cabecera, re.IGNORECASE)
+        ruc_match = re.search(r'RUC[:\s]*(\d+)', texto_cabecera)
+        
+        for page in pdf.pages:
+            tablas = page.extract_tables()
+            for tabla in tablas:
+                for fila in tabla:
+                    # Detectar filas de productos por número de ítem
+                    if fila and fila[0] and str(fila[0]).strip().isdigit():
+                        fila_l = [str(c).replace('\n', ' ').strip() if c else "" for c in fila]
+                        
+                        # Captura dinámica de precios y totales (últimas columnas)
+                        monto_total = fila_l[-1] 
+                        precio_unit = fila_l[-2] 
+
+                        items_finales.append({
+                            "Invoice_No": val_factura,
+                            "Date": fecha_match.group(1) if fecha_match else "N/A",
+                            "RUC_Buyer": ruc_match.group(1) if ruc_match else "20600853318",
+                            "Item_No": fila_l[0],
+                            "Products": fila_l[1],
+                            "Grade": fila_l[2] if len(fila_l) > 2 else "A500 Grado A",
+                            "TTL_KGS": limpiar_valor(fila_l[13]) if len(fila_l) > 13 else 0,
+                            "PRECIO_UNITARIO_USD": limpiar_valor(precio_unit),
+                            "VALOR_TOTAL_USD": limpiar_valor(monto_total)
+                        })
+    return items_finales
