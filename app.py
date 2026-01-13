@@ -41,3 +41,4 @@ if __name__ == "__main__":
         resultados.extend(extraer_datos_baolai(arc))
     if resultados:
         pd.DataFrame(resultados).to_excel("reporte_final.xlsx", index=False)
+
